@@ -4,7 +4,7 @@ Created on Tue Nov  7 11:08:01 2023
 
 @author: sindu
 """
-   
+
 import datetime
 import networkx as nx
 import random as rn
@@ -26,11 +26,11 @@ import scipy.optimize as opt
 import pickle
 
 startTime = datetime.datetime.now()
- 
+
 
 config = configparser.ConfigParser()
 config.read('config.ini')
-      
+
 #--------------------------------------------
 global use_log, case
 # global prob_check, prob_dict
@@ -54,11 +54,11 @@ global bimodal_lnd_scale, lnd_scale
 bimodal_scales = eval(config['LND']['bimodal_lnd_scale'])
 if type(bimodal_scales) != list:
     print('Configuration file error: bimodal_lnd_scale not set as a list')
-    raise 
+    raise
 bimodal_lnd_scale = []
 for bls in bimodal_scales:
     bimodal_lnd_scale.append(float(bls))
-    
+
 lnd_scale = 3e5
 
 
@@ -92,10 +92,23 @@ liquidity_penalty_amt_multiplier = float(config['LDK']['l_pen_amt_mul'])/1000
 hist_liquidity_penalty_multiplier = float(config['LDK']['h_pen_mul'])/1000
 hist_liquidity_penalty_amt_multiplier = float(config['LDK']['h_pen_amt_mul'])/1000
 
+#-----------------
+def zero_heuristic(u, v):
+    return 0
+
+def heuristic_fee_and_delay(u, v):
+    try:
+        hops = nx.shortest_path_length(G, source=u, target=v)
+    except nx.NetworkXNoPath:
+        return float('inf')
+    min_fee = 1e-6  # assume 1 msat as minimal fee rate
+    min_delay = 1
+    estimated_cost = hops * (min_fee * amt + min_delay * amt * rf)
+    return estimated_cost
 
 #---------------------------------------------------------------------------
 def make_graph(G):
-    df = pd.read_csv('LN_snapshot.csv')
+    df = pd.read_csv('LN_snapshot.csv', low_memory=False)
     is_multi = df["short_channel_id"].value_counts() > 1
     df = df[df["short_channel_id"].isin(is_multi[is_multi].index)]
     node_num = {}
@@ -119,7 +132,7 @@ def make_graph(G):
         G.edges[u,v]['UpperBound'] = int(df['satoshis'][i])
         # G.edges[u,v]['UpperBound'] = 10**8 #new
         G.edges[u,v]['LowerBound'] = 0
-        G.edges[u,v]['Age'] = block_height 
+        G.edges[u,v]['Age'] = block_height
         G.edges[u,v]['BaseFee'] = df['base_fee_millisatoshi'][i]/1000
         G.edges[u,v]['FeeRate'] = df['fee_per_millionth'][i]/1000000
         G.edges[u,v]['Delay'] = df['delay'][i]
@@ -128,7 +141,7 @@ def make_graph(G):
         G.edges[u,v]['LastFailure'] = 100
     return G
 
-      
+
 G = nx.DiGraph()
 G = make_graph(G)
 
@@ -143,7 +156,7 @@ for i in G.edges:#new
             rng = np.linspace(0, cap, 10000)
             s = cap/10
             P = np.exp(-rng/s) + np.exp((rng - cap)/s)
-            P /= np.sum(P)            
+            P /= np.sum(P)
             x = int(np.random.choice(rng, p=P))
             # if cc<5:
             #     plt.plot(P)
@@ -151,22 +164,22 @@ for i in G.edges:#new
             #     cc += 1
         else:
             x = int(rn.uniform(0, G.edges[i]['capacity']))
-            
+
         (u,v) = i
         G.edges[(u,v)]['Balance'] = x
         G.edges[(v,u)]['Balance'] = cap - x
-        
+
         y.append(x)
         y.append(cap-x)
-        
+
         if G.edges[v,u]['Balance'] < 0 or G.edges[v,u]['Balance'] > G.edges[i]['capacity']:
             print(i, 'Balance error at', (v,u))
             raise ValueError
-            
+
         if G.edges[u,v]['Balance'] < 0 or G.edges[u,v]['Balance'] > G.edges[i]['capacity']:
             print(i, 'Balance error at', (u,v))
             raise ValueError
-            
+
         if G.edges[(v,u)]['Balance'] + G.edges[(u,v)]['Balance'] != cap:
             print('Balance error at', (v,u))
             raise ValueError
@@ -194,20 +207,20 @@ def callable(source, target, amt, result, name):
                 dist_tracker[v] = p_dist[v]
         dist_tracker[u] = dist[u]
         return amt_tracker, dist_tracker
-    
-    
+
+
     def shortest_simple_paths(G, source, target, weight):
         global prev_dict, paths, amt_dict, fee_dict, visited
         if source not in G:
             raise nx.NodeNotFound(f"source node {source} not in graph")
-    
+
         if target not in G:
             raise nx.NodeNotFound(f"target node {target} not in graph")
-    
+
         wt = _weight_function(G, weight)
-    
+
         shortest_path_func = nx2._dijkstra
-        
+
         listA = []
         listB = PathBuffer()
         amt_holder = PathBuffer()
@@ -221,12 +234,12 @@ def callable(source, target, amt, result, name):
         while True:
             if not prev_path:
                 prev_dict = {}
-                # prob_eclair = {} 
+                # prob_eclair = {}
                 paths = {source:[source]}
-                dist = shortest_path_func(G, source=source, 
-                                          target=target, 
-                                          weight=weight, 
-                                          pred=prev_dict, 
+                dist = shortest_path_func(G, source=source,
+                                          target=target,
+                                          weight=weight,
+                                          pred=prev_dict,
                                           paths=paths)
                 path = paths[target]
                 visited = set()
@@ -243,7 +256,7 @@ def callable(source, target, amt, result, name):
                 for i in range(1, len(prev_path)):
                     root = prev_path[:i]
                     visited = set(root.copy())
-                    root_length = prev_dist[root[-1]]        
+                    root_length = prev_dist[root[-1]]
                     amt_dict = {}
                     fee_dict = {}
                     prev_dict = {}
@@ -268,7 +281,7 @@ def callable(source, target, amt, result, name):
                             weight=weight,
                             pred = prev_dict,
                             paths = paths
-                            
+
                         )
                         try:
                             path = root[:-1] + paths[target]
@@ -283,7 +296,7 @@ def callable(source, target, amt, result, name):
                     except:
                         pass
                     ignore_nodes.add(root[-1])
-    
+
             if listB:
                 path = listB.pop()
                 yield path
@@ -294,32 +307,32 @@ def callable(source, target, amt, result, name):
                 # prev_prob = prob_holder.pop()
             else:
                 break
-    
-    
+
+
     class PathBuffer:
         def __init__(self):
             self.paths = set()
             self.sortedpaths = []
             self.counter = count()
-    
+
         def __len__(self):
             return len(self.sortedpaths)
-    
+
         def push(self, cost, path):
             hashable_path = tuple(path)
             if hashable_path not in self.paths:
                 heappush(self.sortedpaths, (cost, next(self.counter), path))
                 self.paths.add(hashable_path)
-    
+
         def pop(self):
             (cost, num, path) = heappop(self.sortedpaths)
             hashable_path = tuple(path)
             self.paths.remove(hashable_path)
             return path
-        
-    
+
+
     #-----------------------------------------------------------------------------
-    
+
     def dijkstra_lnd(G, sources, weight, pred=None, paths=None, cutoff=None, target=None):
         try:
             G_succ = G._adj  # For speed-up (and works for both directed and undirected graphs)
@@ -341,7 +354,7 @@ def callable(source, target, amt, result, name):
                 # print(probability_dist)
                 # print(dist)
                 (prob_dist, d, path_prob,  _, v) = pop(fringe)
-                
+
                 if v in dist:
                     continue  # already searched this node.
                 dist[v] = d
@@ -375,14 +388,63 @@ def callable(source, target, amt, result, name):
                     elif vu_prob == seen[u]:# or prob <= p_path[u]:
                         if pred is not None:
                             pred[u].append(v)
-    
-                
+
+
             # The optional predecessor and path dictionaries can be accessed
             # by the caller via the pred and paths objects passed as arguments.
             return probability_dist
         except:
             raise
-    
+
+    def astar_lnd(G, source, target, weight, heuristic=None, paths=None):
+        from heapq import heappush, heappop
+        from itertools import count
+
+        if heuristic is None:
+            def heuristic(u, v):
+                return 0
+
+        G_succ = G._adj
+        push = heappush
+        pop = heappop
+        c = count()
+        enqueued = {}
+        explored = {}
+
+        pred = {}
+        dist = {}
+        path = {source: [source]}
+        push_heap = []
+
+        heappush(push_heap, (0, next(c), source, 0))  # (f_score, count, node, g_score)
+        while push_heap:
+            _, __, current, g_score = pop(push_heap)
+
+            if current == target:
+                if paths is not None:
+                    paths[target] = path[current]
+                return {target: g_score}
+
+            if current in explored:
+                continue
+            explored[current] = True
+
+            for neighbor, edata in G_succ[current].items():
+                cost, _ = weight(current, neighbor, edata)
+                if cost == float('inf'):
+                    continue
+                new_g = g_score + cost
+                f_score = new_g + heuristic(neighbor, target)
+
+                if neighbor not in dist or new_g < dist[neighbor]:
+                    dist[neighbor] = new_g
+                    pred[neighbor] = current
+                    path[neighbor] = path[current] + [neighbor]
+                    push(push_heap, (f_score, next(c), neighbor, new_g))
+
+        raise nx.NetworkXNoPath(f"No path from {source} to {target}")
+
+
     def sub_func(u,v, amount):
         global amt_dict, fee_dict
         fee = round(G.edges[u,v]["BaseFee"] + amount*G.edges[u,v]["FeeRate"], 5)
@@ -391,8 +453,8 @@ def callable(source, target, amt, result, name):
             fee_dict[(u,v)] = 0
             fee = 0
         amt_dict[(u,v)] = round(amount+fee, 5)
-     
-    
+
+
     def compute_fee(v,u,d):
         global fee_dict, amt_dict, cache_node, visited
         if v == target:
@@ -401,11 +463,11 @@ def callable(source, target, amt, result, name):
         else:
             if cache_node != v:
                 visited.add(cache_node)
-                cache_node = v          
-            amount = amt_dict[(v, prev_dict[v][0])] 
+                cache_node = v
+            amount = amt_dict[(v, prev_dict[v][0])]
             sub_func(u,v,amount)
-    
-    
+
+
     def primitive(c, x):
         # if datasample == 'uniform':
         #     s = 3e5 #fine tune 's' for improved performance
@@ -426,18 +488,18 @@ def callable(source, target, amt, result, name):
         if norm == 0:
             return 0
         return (excs - exs)/norm
-    
-    
+
+
     def integral(cap, lower, upper):
         return primitive(cap, upper) - primitive(cap, lower)
-    
-    
+
+
     def bimodal(cap, a_f, a_s, a):
         prob = integral(cap, a, a_f)
         if prob is math.nan:
             return 0
         reNorm = integral(cap, a_s, a_f)
-        
+
         if reNorm is math.nan or reNorm == 0:
             return 0
         prob /= reNorm
@@ -446,13 +508,13 @@ def callable(source, target, amt, result, name):
         if prob<0:
             return 0
         return prob
-    
-    
+
+
     #v - target, u - source, d - G.edges[v,u]
     def lnd_cost(v,u,d):
         global prob_check, prob_dict#new
         global timepref, case
-        compute_fee(v,u,d)        
+        compute_fee(v,u,d)
         timepref *= 0.9
         defaultattemptcost = attemptcost+attemptcostppm*amt_dict[(u,v)]/1000000
         penalty = defaultattemptcost * ((1/(0.5-timepref/2)) - 1)
@@ -466,7 +528,7 @@ def callable(source, target, amt, result, name):
             prob = nodeprob * (1-(1/prob_weight))
             # prob_check[u,v] = prob
         elif case == 'bimodal':
-            prob = bimodal(cap, G.edges[u,v]['UpperBound'], G.edges[u,v]['LowerBound'], amt_dict[(u,v)]) 
+            prob = bimodal(cap, G.edges[u,v]['UpperBound'], G.edges[u,v]['LowerBound'], amt_dict[(u,v)])
             # prob_dict[(v,u)] = prob
         if v == target:
             prob_dict[v,u] = prob
@@ -491,19 +553,19 @@ def callable(source, target, amt, result, name):
     def lnd_cost_test(v,u,d):
         # global prob_check, prob_dict#new
         global timepref, case
-        compute_fee(v,u,d)        
+        compute_fee(v,u,d)
         timepref *= 0.9
         defaultattemptcost = attemptcost+attemptcostppm*amt_dict[(u,v)]/1000000
         penalty = defaultattemptcost * ((1/(0.5-timepref/2)) - 1)
         cap = G.edges[u,v]["capacity"]
-        
+
         if amt_dict[(u,v)] > cap:
             return float('inf'), float('inf')
-        
+
         # prob = (G.edges[u,v]['UpperBound'] - amt_dict[(u,v)]+1)/(G.edges[u,v]['UpperBound'] - G.edges[u,v]['LowerBound']+1)
         if G.edges[u,v]["capacity"] != 0:
             prob = 1 - (amt_dict[(u,v)]/cap)
-            
+
         if v == target:
             prob_dict[v,u] = prob
         else:
@@ -523,7 +585,7 @@ def callable(source, target, amt, result, name):
         return dist, cost
 
 
-    
+
     def cln_cost(v,u,d):
         compute_fee(v,u,d)
         cap = G.edges[u,v]['capacity']
@@ -540,13 +602,13 @@ def callable(source, target, amt, result, name):
             cap_bias = math.log(cap+1) - math.log(cap+1-curr_amt)
         cost = (fee+((curr_amt*rf_cln*G.edges[u,v]["Delay"])/(blk_per_year*100))+1)*(cap_bias+1)
         return cost
-    
-    
+
+
     def normalize(value, minm, maxm):
         norm = 0.00001 + 0.99998 * (min(max(minm,value), maxm) - minm)/(maxm - minm)
         return norm
-    
-    
+
+
     def eclair_cost(v,u,d):
         global visited, use_log, case
         if u in visited:
@@ -555,13 +617,13 @@ def callable(source, target, amt, result, name):
         ncap = 1-normalize(G.edges[u,v]["capacity"], min_cap, max_cap)
         nage = normalize(G.edges[u,v]["Age"], cbr-365*24*6, cbr)
         ncltv = normalize(G.edges[u,v]["Delay"], min_cltv, max_cltv)
-        
+
         if v == target:
             hop_amt = amt
         else:
             hop_amt = amt_dict[(v, prev_dict[v][0])]
         hopcost =  hop_base + hop_amt * hop_rate
-        
+
         #Success Probability
         if G.edges[u,v]["capacity"] != 0:
             if hop_amt > G.edges[u,v]["capacity"]:
@@ -574,7 +636,7 @@ def callable(source, target, amt, result, name):
             else:
                 prob = 1 - (hop_amt/G.edges[u,v]["capacity"])
         else:
-            prob = 0 
+            prob = 0
         #risk cost
         risk_cost = amt_dict[(u,v)] * G.edges[u,v]["Delay"] * locked_funds_risk
         #failure cost
@@ -588,25 +650,25 @@ def callable(source, target, amt, result, name):
                     cost = fee_dict[(u,v)] + hopcost + risk_cost - failure_cost * math.log(prob)
                 else:
                     cost = float('inf')
-            else: 
+            else:
                 if prob>0:
                     cost = fee_dict[(u,v)] + hopcost + risk_cost + (failure_cost/prob)
                 else:
                     cost = float('inf')
         return cost
-    
-    
+
+
     def ldk_neg_log10(num, den):
         return 2048*(math.log10(den) - math.log10(num))
-    
-    
+
+
     def ldk_combined_penalty(a, neg_log, liquidity_penalty_mul, liquidity_penalty_amt_mul):
         neg_log = min(neg_log, 2*2048)
         liq_penalty = neg_log * liquidity_penalty_mul/2048
         amt_penalty = neg_log * liquidity_penalty_amt_mul * a/(2048 * 2**20)
         return liq_penalty + amt_penalty
-    
-    
+
+
     def ldk_prob(a, min_liq, max_liq, cap, success_flag, case):
         min_liquidity = min_liq
         # if linear_success_prob == 'True':
@@ -625,8 +687,8 @@ def callable(source, target, amt, result, name):
         if ((success_flag and min_liquidity) == 0) and den<(((2**64)-1)/21):
             den = den*21/16
         return num, den
-            
-    
+
+
     def liq_penalty(v,u,case):
         capacity = G.edges[u,v]["capacity"]
         max_liquidity = capacity - max_liq_offset
@@ -651,7 +713,7 @@ def callable(source, target, amt, result, name):
             neg_log = ldk_neg_log10(num, den)
             res = res + ldk_combined_penalty(a, neg_log, hist_liquidity_penalty_multiplier, hist_liquidity_penalty_amt_multiplier)
         return res
-    
+
     def final_penalty(v,u,case):
         htlc_max = G.edges[u,v]["htlc_max"]
         anti_probing_penalty = 0
@@ -666,7 +728,7 @@ def callable(source, target, amt, result, name):
         penalty_liquidity = liq_penalty(v,u,case)
         penalty_total = penalty_base + penalty_liquidity + anti_probing_penalty
         return penalty_total
-            
+
 
     def ldk_cost(v,u,d):
         global case
@@ -680,8 +742,8 @@ def callable(source, target, amt, result, name):
         if amt_dict[(u,v)] > G.edges[u,v]["capacity"]:
             return float('inf')
         return cost
-    
-    
+
+
     # def release_locked(j, path):
     #     while j>=0:
     #         u = path[j]
@@ -689,8 +751,8 @@ def callable(source, target, amt, result, name):
     #         G.edges[u,v]["Balance"] += G.edges[u,v]["Locked"]
     #         G.edges[u,v]["Locked"] = 0
     #         j -= 1
-           
-    
+
+
     #simulate payment routing on the path found by the LN clients
     def route(G, path, source, target):
         try:
@@ -730,30 +792,33 @@ def callable(source, target, amt, result, name):
                     return [path, total_fee, total_delay, path_length, 'Failure']
                 # else:
                     # G.edges[u,v]["Balance"] -= amount
-                    # G.edges[u,v]["Locked"] = amount  
+                    # G.edges[u,v]["Locked"] = amount
                     # G.edges[u,v]["LastFailure"] = 100
                     # if G.edges[u,v]["LowerBound"] < amount:
                     #     G.edges[u,v]["LowerBound"] = amount #new
                 amount = round(amount - fee, 5)
                 if v == target and amount!=amt:
                     return [path, total_fee, total_delay, path_length, 'Failure']
-          
+
             # release_locked(i-1, path)
             return [path, total_fee, total_delay, path_length, 'Success']
         except Exception as e:
             print(e)
             return "Routing Failed due to the above error"
-    
-    
+
+
     #----------------------------------------------
     def dijkstra_caller(res_name, func):
         dist = nx2._dijkstra(G, source=target, target=source, weight = func, pred=prev_dict, paths=paths)
         res = paths[source]
         print("Path found by", res_name, res[::-1])
         result[res_name] = route(G, res, source, target)
-        
+
     def modified_dijkstra_caller(res_name, func):
-        dist = dijkstra_lnd(G, sources=[target], target=source, weight = func, pred=prev_dict, paths=paths)
+        # dist = dijkstra_lnd(G, sources=[target], target=source, weight = func, pred=prev_dict, paths=paths)
+        # dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=zero_heuristic, paths=paths)
+        dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=heuristic_fee_and_delay, paths=paths)
+
         res = paths[source]
         print("Path found by", res_name, res[::-1])
         if res_name == 'LND2':
@@ -763,14 +828,14 @@ def callable(source, target, amt, result, name):
                 result[res_name] = route(G, res, source, target)
         else:
             result[res_name] = route(G, res, source, target)
-        
-        
+
+
     def helper(name, func):
         global fee_dict, amt_dict, cache_node, visited
         global prev_dict, paths, prob_dict
         global use_log, case
         global bimodal_lnd_scale, lnd_scale
-        
+
         def clear_globals():
             global fee_dict, amt_dict, cache_node, visited
             global prev_dict, paths, prob_dict
@@ -781,10 +846,10 @@ def callable(source, target, amt, result, name):
             visited = set()
             prev_dict = {}
             paths = {target:[target]}
-            
-        
+
+
         clear_globals()
-        
+
         # try:
         print("\n**",name,"**")
         if name != 'Eclair':
@@ -802,7 +867,7 @@ def callable(source, target, amt, result, name):
                                     modified_dijkstra_caller(cs, func)
                             else:
                                 modified_dijkstra_caller(cs, func)
-                                
+
                         else:
                             case = cs
                             # dist = dijkstra_lnd(G, sources=[target], target=source, weight = lnd_cost_test, pred=prev_dict, paths=paths)
@@ -814,20 +879,20 @@ def callable(source, target, amt, result, name):
                         print("Error:", e)
                         pass
 
-                    
+
             elif name == 'LDK':
                 ldkcase = config['General']['ldkcase'].split('|')
                 for cs in ldkcase:
                     try:
                         clear_globals()
-                        
-                        func = ldk_cost  
+
+                        func = ldk_cost
                         case = config[name][cs]
-                        dijkstra_caller(cs, func) 
+                        dijkstra_caller(cs, func)
                     except Exception as e:
                         print("Error:", e)
                         pass
-                                            
+
             else:
                 try:
                     dijkstra_caller(name, func)
@@ -837,11 +902,11 @@ def callable(source, target, amt, result, name):
         else:
             eclaircase = config['General']['eclaircase'].split('|')
             for cs in eclaircase:
-                try: 
+                try:
                     clear_globals()
-                    
+
                     use_log = config[cs]['use_log']
-                    case = config[cs]['case'] 
+                    case = config[cs]['case']
                     res = list(islice(shortest_simple_paths(G, source=target, target=source, weight=func), 1))
                     for path in res:
                         print("Path found by", cs, path[::-1])
@@ -851,12 +916,12 @@ def callable(source, target, amt, result, name):
                     pass
         # except Exception as e:
         #     print(e)
-            
-    algo = {'LND':lnd_cost, 'CLN':cln_cost, 'LDK':ldk_cost, 'Eclair':eclair_cost} 
+
+    algo = {'LND':lnd_cost, 'CLN':cln_cost, 'LDK':ldk_cost, 'Eclair':eclair_cost}
     global fee_dict, amt_dict, cache_node, visited
     global prev_dict, paths, prob_dict
     global bimodal_lnd_scale, lnd_scale
-    
+
     fee_dict = {}
     amt_dict = {}
     prob_dict = {}
@@ -864,21 +929,21 @@ def callable(source, target, amt, result, name):
     visited = set()
     prev_dict = {}
     paths = {target:[target]}
-    
+
     helper(name, algo[name])
     return result
-        
 
-if __name__ == '__main__':       
+
+if __name__ == '__main__':
     def node_classifier():
-        df = pd.read_csv('LN_snapshot.csv')
+        df = pd.read_csv('LN_snapshot.csv', low_memory=False)
         is_multi = df["short_channel_id"].value_counts() > 1
         df = df[df["short_channel_id"].isin(is_multi[is_multi].index)]
         nodes_pubkey = list(OrderedSet(list(df['source']) + list(df['destination'])))
         node_num = {}
         for i in range(len(nodes_pubkey)):
             pubkey = nodes_pubkey[i]
-            node_num[pubkey] = i   
+            node_num[pubkey] = i
         src_count = df['source'].value_counts()
         node_cap = df[['source', 'satoshis']]
         node_cap = node_cap.groupby('source').sum()
@@ -893,10 +958,10 @@ if __name__ == '__main__':
             elif cap > 10**4 and cap < 10**6 and chan_cnt>5:
                 fair_node.append(node_num[i])
             elif chan_cnt<=5:
-                poor_node.append(node_num[i])            
+                poor_node.append(node_num[i])
         return well_node, fair_node, poor_node
-    
-    
+
+
     def node_selector(node_type):
         if node_type == 'well':
             return rn.choice(well_node)
@@ -906,8 +971,8 @@ if __name__ == '__main__':
             return rn.choice(poor_node)
         else:
             return rn.randint(0,13129)
-        
-        
+
+
     def node_ok(source, target):
         src_max = 0
         tgt_max = 0
@@ -920,8 +985,8 @@ if __name__ == '__main__':
             return True
         else:
             return False
-        
-            
+
+
     def node_cap(source, target):
         src_max = 0
         tgt_max = 0
@@ -931,57 +996,57 @@ if __name__ == '__main__':
             tgt_max = max(tgt_max, G.edges[edges]['Balance'])
         upper_bound = int(min(src_max, tgt_max))
         return upper_bound
-        
-    work = []              
-    result_list = [] 
+
+    work = []
+    result_list = []
     prob_dict = {}
-    
+
     well_node, fair_node, poor_node = node_classifier()
     i = 0
-    
+
     algos = config['General']['algos'].split('|')
     amt_end_range = int(config['General']['amt_end_range'])
     #uniform random amount selection
     while i<epoch:
         if amt_type == 'fixed':
             amt = int(config['General']['amount'])
-            
+
         elif amt_type == 'random':
-            k = (i%amt_end_range)+1 #i%6 for fair node else i%8 
+            k = (i%amt_end_range)+1 #i%6 for fair node else i%8
             amt = rn.randint(10**(k-1), 10**k)
-            
+
             # k = (i%3)+5#comment this
             # amt = rn.randint(10**(k-1), 10**k)#comment this
-            
+
         result = {}
         source = -1
         target = -1
         while (target == source or (source not in G.nodes()) or (target not in G.nodes())):
             source = node_selector(src_type)
             target = node_selector(dst_type)
-        
+
         if not(node_ok(source, target)):
-            continue 
-                     
+            continue
+
         print("\nSource = ",source, "Target = ", target, "Amount=", amt, 'Epoch =', i)
         print("----------------------------------------------")
         result['Source'] = source
         result['Target'] = target
         result['Amount'] = amt
         # result['upper bound'] = cap
-        
+
         for algo in algos:#uncomment
             work.append((source, target, amt, result, algo))
         # work.append((source, target, amt, result, 'LND')) #new
         i = i+1
-    
-    
+
+
     # with open('work_list.pkl', 'rb') as f:
     #     work = pickle.load(f)
     pool = mp.Pool(processes=8)
     a = pool.starmap(callable, work)
     result_list.append(a)
-    
+
     ##4 work so i=4
     ans_list = [] #uncomment
     i = 0
@@ -995,17 +1060,17 @@ if __name__ == '__main__':
             temp = {}
             i = 0
 
-           
+
     fields = list(a[0].keys())
-            
-    filename = config['General']['filename'] 
+
+    filename = config['General']['filename']
     with open(filename, 'w') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fields)
         writer.writeheader()
         for i in ans_list:
             writer.writerow(i)
-        
-            
+
+
 endTime = datetime.datetime.now()
 print(endTime - startTime)
-    
+
