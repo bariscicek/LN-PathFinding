@@ -147,7 +147,7 @@ G = make_graph(G)
 
 y = []
 cc = 0
-#Sample balance from bimodal or uniform distribution
+# Sample balance from bimodal or uniform distribution
 for i in G.edges:#new
     if 'Balance' not in G.edges[i]:
         cap = G.edges[i]['capacity']
@@ -184,8 +184,8 @@ for i in G.edges:#new
             print('Balance error at', (v,u))
             raise ValueError
 
-plt.hist(y)
-plt.show()
+# plt.hist(y)
+# plt.show()
 
 
 def callable(source, target, amt, result, name):
@@ -396,7 +396,7 @@ def callable(source, target, amt, result, name):
         except:
             raise
 
-    def astar_lnd(G, source, target, weight, heuristic=None, paths=None):
+    def astar_lnd(G, source, target, weight, heuristic=None, paths=None, pred=None):
         from heapq import heappush, heappop
         from itertools import count
 
@@ -409,38 +409,43 @@ def callable(source, target, amt, result, name):
         pop = heappop
         c = count()
         enqueued = {}
-        explored = {}
+        seen = {}
 
         pred = {}
         dist = {}
         path = {source: [source]}
         push_heap = []
 
-        heappush(push_heap, (0, next(c), source, 0))  # (f_score, count, node, g_score)
+        heappush(push_heap, (heuristic(source, target), next(c), source, 0))  # (f_score, count, node, g_score)
         while push_heap:
-            _, __, current, g_score = pop(push_heap)
+            _, __, v, g_score = pop(push_heap)
 
-            if current == target:
+            if v == target:
                 if paths is not None:
-                    paths[target] = path[current]
+                    paths[target] = path[v]
                 return {target: g_score}
 
-            if current in explored:
+            if v in seen:
                 continue
-            explored[current] = True
+            seen[v] = True
 
-            for neighbor, edata in G_succ[current].items():
-                cost, _ = weight(current, neighbor, edata)
-                if cost == float('inf'):
+            for u, e in G_succ[v].items():
+                if pred is not None:
+                    pred[u] = [v]
+                if paths is not None:
+                    paths[u] = paths[v] + [u]
+
+                cost, _ = weight(v, u, e)
+                if cost is None:
                     continue
                 new_g = g_score + cost
-                f_score = new_g + heuristic(neighbor, target)
+                f_score = new_g + heuristic(u, target)
 
-                if neighbor not in dist or new_g < dist[neighbor]:
-                    dist[neighbor] = new_g
-                    pred[neighbor] = current
-                    path[neighbor] = path[current] + [neighbor]
-                    push(push_heap, (f_score, next(c), neighbor, new_g))
+                if u not in dist or new_g < dist[u]:
+                    dist[u] = new_g
+                    pred[u] = v
+                    path[u] = path[v] + [u]
+                    push(push_heap, (f_score, next(c), u, new_g))
 
         raise nx.NetworkXNoPath(f"No path from {source} to {target}")
 
@@ -464,6 +469,11 @@ def callable(source, target, amt, result, name):
             if cache_node != v:
                 visited.add(cache_node)
                 cache_node = v
+            if v not in prev_dict or not prev_dict[v]:
+            # Skip this computation, or you can assign a default high cost
+            # You may log this for debugging
+                # print(f"[Warning] Skipping compute_fee: no predecessor for node {v}")
+                return
             amount = amt_dict[(v, prev_dict[v][0])]
             sub_func(u,v,amount)
 
@@ -509,9 +519,33 @@ def callable(source, target, amt, result, name):
             return 0
         return prob
 
+    def lnd_cost(v,u,d):
+        amount = amt  # Use global amount being routed
+        if amount > d['capacity']:
+            return float('inf'), float('inf')
+
+        # Fee calculation
+        fee = d['BaseFee'] + amount * d['FeeRate']
+        if u == source:
+            fee = 0
+
+        # Penalty term from original LND formula
+        default_attempt_cost = attemptcost + attemptcostppm * amount / 1_000_000
+        penalty = default_attempt_cost * ((1 / (0.5 - timepref / 2)) - 1)
+
+        # Probability of success (simple linear proxy)
+        prob = 1 - (amount / d['capacity'])
+        if prob < 0.01:
+            cost = float('inf')
+        else:
+            cost = penalty / prob
+
+        # Delay term as distance
+        dist = fee + d['Delay'] * amount * rf
+        return dist, cost
 
     #v - target, u - source, d - G.edges[v,u]
-    def lnd_cost(v,u,d):
+    def lnd_cost_stateful(v,u,d):
         global prob_check, prob_dict#new
         global timepref, case
         compute_fee(v,u,d)
@@ -817,7 +851,7 @@ def callable(source, target, amt, result, name):
     def modified_dijkstra_caller(res_name, func):
         # dist = dijkstra_lnd(G, sources=[target], target=source, weight = func, pred=prev_dict, paths=paths)
         # dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=zero_heuristic, paths=paths)
-        dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=heuristic_fee_and_delay, paths=paths)
+        dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=heuristic_fee_and_delay, paths=paths, pred=prev_dict)
 
         res = paths[source]
         print("Path found by", res_name, res[::-1])
@@ -874,7 +908,8 @@ def callable(source, target, amt, result, name):
                             # res = paths[source]
                             # print("Path found by", cs, res[::-1])
                             # result[cs] = route(G, res, source, target)
-                            modified_dijkstra_caller(cs, lnd_cost_test)
+                            # modified_dijkstra_caller(cs, lnd_cost_test)
+                            modified_dijkstra_caller(cs, lnd_cost)
                     except Exception as e:
                         print("Error:", e)
                         pass
