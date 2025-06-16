@@ -19,6 +19,7 @@ from tabulate import tabulate
 from ordered_set import OrderedSet
 import configparser
 from scipy import stats
+import re
 
 
 config = configparser.ConfigParser()
@@ -30,12 +31,19 @@ df = pd.read_csv(filepath)
 df = df.fillna("[[],0,0,0,'Failure']")
 df = df.drop_duplicates()
 
+def safe_eval_numpy_fallback(s):
+    # Replace NumPy wrappers with their literal values
+    s = re.sub(r'np\.float64\(([^)]+)\)', r'\1', s)
+    s = re.sub(r'np\.int64\(([^)]+)\)', r'\1', s)
+    return s
+
 #-------------------------------------------------------------------------------------------------
 #seperate each field from the string
 def extract_field(num, col):
     extract_list = []
     for i in df[col]:
-        elem = ast.literal_eval(i)
+        result = safe_eval_numpy_fallback(i)
+        elem = ast.literal_eval(result)
         extract_list.append(elem[num])
     return extract_list
 
@@ -107,9 +115,9 @@ def df_plot(data, amt_bins, algo, title, xlabel, ylabel):
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
-    
+
     xticks = [i for i in range(len(ratio_df))]
-    xticklabels = [rf'$10^{i}-10^{i+step}$' for i in range(start, end, step)] 
+    xticklabels = [rf'$10^{i}-10^{i+step}$' for i in range(start, end, step)]
     # xticklabels = [rf'${i}-{i+step}$' for i in range(start, end, step)]
     plt.xticks(xticks, xticklabels, rotation=0, fontsize=7)
     plt.show()
@@ -131,12 +139,12 @@ def plot_graph(x, y, kind, xlog, ylog, title, xlabel, ylabel):
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     xticks = [i for i in range(len(x)+1)]
-    xticklabels = [''] + [rf'$10^{i}-10^{i+step}$' for i in range(start, end, step)]  
+    xticklabels = [''] + [rf'$10^{i}-10^{i+step}$' for i in range(start, end, step)]
     # xticklabels = ['']+ [rf'${i}-{i+step}$' for i in range(start, end, step)]
     plt.xticks(xticks, xticklabels,fontsize=8)
     plt.show()
-    
-#find median fee in the amount bin, return list of list of fees in bins, list of median fee   
+
+#find median fee in the amount bin, return list of list of fees in bins, list of median fee
 def fee_df(val, name, step):
     fee_list = []
     count = []
@@ -159,12 +167,12 @@ def fee_df(val, name, step):
 
         fee_med_ratio.append(((data[name]+0.00000001)/data['amount']).median())
         fee_ratio_list.append(list((data[name]+0.00000001)/data['amount']))
-        
+
         fee_med.append((data[name]+0.00000001).median())
         fee_list.append(list(data[name]+0.00000001))
         amount_list.append(list(data['amount']))
     return fee_list, fee_med, amount_list, fee_med_ratio, fee_ratio_list
- 
+
 #filter data based on success rate across variants
 #If success on # given or more algo, apppend to sfee
 sfee = pd.DataFrame(columns=df1.columns)
@@ -176,8 +184,8 @@ for i in df1.index:
         if row[f'{a}tp'] == 'Success':
             c+=1
     if c>=no_of_clients_success:
-        sfee =  pd.concat([sfee, pd.DataFrame([row])], ignore_index=True)  
-     
+        sfee =  pd.concat([sfee, pd.DataFrame([row])], ignore_index=True)
+
 # save_df = pd.DataFrame(index=['Weighted avg median fee', 'WAvg path length', 'WAvg Delay', 'avg_path', 'Avg delay'])
 save_df = pd.DataFrame(columns=algo)
 mad_df = pd.DataFrame(columns=algo)
@@ -193,14 +201,14 @@ for a in algo:
     fee_list, fee_med, amount_list, fee_med_ratio, fee_ratio_list = fee_df(val, name, step)
     plot_graph(fee_list, 0, 'box', False, True, f'{a} Fee', 'Amount Bins', 'Fee (log scale)')
     # plot_graph(range(len(fee_med)), fee_med,'scatter', False, True, f'{a} Median Fee', 'Amount', 'Fee')
-    
-    w_sum = 0 
+
+    w_sum = 0
     p_sum = 0
     d_sum = 0
-    total_weight = 0   
-    fee_mega = [] 
-    fee_std = [] 
-    fee_MAD = []                     
+    total_weight = 0
+    fee_mega = []
+    fee_std = []
+    fee_MAD = []
     for j in range(len(fee_ratio_list)):
         fee_mega = fee_mega+fee_ratio_list[j] #overall fee ratio list
         fee_std.append(np.std(fee_ratio_list[j]))
@@ -213,7 +221,7 @@ for a in algo:
         mad = round(fee_MAD[k] * 100,3)
         fee_med_std.append(f'{med}\xB1{std}')
         fee_med_MAD.append(f'{med}\xB1{mad}')
-        
+
     save_df[a] = fee_med_std
     mad_df[a] = fee_med_MAD
     # save_df[a] = fee_med_ratio
@@ -221,7 +229,7 @@ for a in algo:
     metrics_df[a] = [median(fee_mega)*100, sfee[[f'{a}pthlnt']].mean()[0], sfee[[f'{a}dly']].mean()[0]] #save this for fee
 
 # print(save_df)
-    
+
 print('\n', tabulate(metrics_df, headers = 'keys', tablefmt = 'psql', showindex=True))
 
 
@@ -264,11 +272,11 @@ dd = dd.replace(float('inf'), None).dropna()
 #-------------------------------------------------------------------------------------------------
 
 #------------------------------------------------------------------------------------------------
-    # w_sum = 0 
+    # w_sum = 0
     # p_sum = 0
     # d_sum = 0
-    # total_weight = 0 
-    # fee_mega = []  
+    # total_weight = 0
+    # fee_mega = []
     # for j in range(len(fee_list)):
     #     fee_mega = fee_mega+fee_list[j]
     #     pval = []
@@ -296,7 +304,7 @@ dd = dd.replace(float('inf'), None).dropna()
 
 # save_df.to_csv(f'{file}_stat2.csv')
 # sdf.to_csv(f'{file}_stat1.csv')
-        
+
 
 
 

@@ -5,6 +5,7 @@ Created on Tue Nov  7 11:08:01 2023
 @author: sindu
 """
 
+import os
 import datetime
 import networkx as nx
 import random as rn
@@ -848,8 +849,12 @@ def callable(source, target, amt, result, name):
         print("Path found by", res_name, res[::-1])
         result[res_name] = route(G, res, source, target)
 
-    def modified_dijkstra_caller(res_name, func):
-        dist = dijkstra_lnd(G, sources=[target], target=source, weight = lnd_cost_stateful, pred=prev_dict, paths=paths)
+    def modified_dijkstra_caller(res_name, pathalgo, func):
+        if pathalgo == "astar":
+            dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=zero_heuristic, paths=paths)
+        else:
+            dist = dijkstra_lnd(G, sources=[target], target=source, weight = lnd_cost_stateful, pred=prev_dict, paths=paths)
+
         # dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=zero_heuristic, paths=paths)
         # dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=heuristic_fee_and_delay, paths=paths, pred=prev_dict)
 
@@ -889,6 +894,7 @@ def callable(source, target, amt, result, name):
         if name != 'Eclair':
             if name == 'LND':
                 lndcase = config['General']['lndcase'].split('|')
+                pathalgo = config['General']['pathalgo']
                 for cs in lndcase:
                     try:
                         clear_globals()
@@ -900,7 +906,7 @@ def callable(source, target, amt, result, name):
                                     clear_globals()
                                     modified_dijkstra_caller(cs, func)
                             else:
-                                modified_dijkstra_caller(cs, func)
+                                    modified_dijkstra_caller(cs, pathalgo, func)
 
                         else:
                             case = cs
@@ -1099,7 +1105,10 @@ if __name__ == '__main__':
     fields = list(a[0].keys())
 
     filename = config['General']['filename']
-    with open(filename, 'w') as csvfile:
+    base = os.path.splitext(os.path.basename(filename))[0]
+    ext = os.path.splitext(os.path.basename(filename))[1]
+    new_filename = base + "_"+config['General']['pathalgo'] + ext
+    with open(new_filename, 'w') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fields)
         writer.writeheader()
         for i in ans_list:
