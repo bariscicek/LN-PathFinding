@@ -843,15 +843,15 @@ def callable(source, target, amt, result, name):
 
     #----------------------------------------------
     def dijkstra_caller(res_name, func):
-        dist = nx2._dijkstra(G, source=target, target=source, weight = func, pred=prev_dict, paths=paths)
+        dist = nx2._dijkstra(G, source=target, target=source, weight = lnd_cost_stateful, pred=prev_dict, paths=paths)
         res = paths[source]
         print("Path found by", res_name, res[::-1])
         result[res_name] = route(G, res, source, target)
 
     def modified_dijkstra_caller(res_name, func):
-        # dist = dijkstra_lnd(G, sources=[target], target=source, weight = func, pred=prev_dict, paths=paths)
+        dist = dijkstra_lnd(G, sources=[target], target=source, weight = lnd_cost_stateful, pred=prev_dict, paths=paths)
         # dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=zero_heuristic, paths=paths)
-        dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=heuristic_fee_and_delay, paths=paths, pred=prev_dict)
+        # dist = astar_lnd(G, source=target, target=source, weight=func, heuristic=heuristic_fee_and_delay, paths=paths, pred=prev_dict)
 
         res = paths[source]
         print("Path found by", res_name, res[::-1])
