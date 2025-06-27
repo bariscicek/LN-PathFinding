@@ -20,13 +20,23 @@ from ordered_set import OrderedSet
 import configparser
 from scipy import stats
 import re
+import os
 
 
 config = configparser.ConfigParser()
 config.read('analysis_config.ini')
 
+config_sim = configparser.ConfigParser()
+config_sim.read('config.ini')
+try:
+    filepath = config['File']['filepath']
+except:
+    filepath = config_sim['General']['filename']
+    base = os.path.splitext(os.path.basename(filepath))[0]
+    ext = os.path.splitext(os.path.basename(filepath))[1]
+    filepath = base + "_"+config_sim['General']['pathalgo'] + ext
 
-filepath = config['File']['filepath']
+
 df = pd.read_csv(filepath)
 df = df.fillna("[[],0,0,0,'Failure']")
 df = df.drop_duplicates()
@@ -103,7 +113,7 @@ print('\nSuccess Rate:\n\n', tabulate(srate, headers = 'keys', tablefmt = 'psql'
 #-------------------------------------------------------------------------------------------------
 # plot data frame (line graph), pass dict to the function
 def df_plot(data, amt_bins, algo, title, xlabel, ylabel):
-    fig, ax = plt.subplots(figsize=plt.figaspect(1/3))
+    # fig, ax = plt.subplots(figsize=plt.figaspect(1/3))
     df_temp = pd.DataFrame(data)
     ratio_df = pd.DataFrame()
     for a in algo:

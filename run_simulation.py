@@ -18,6 +18,7 @@ from itertools import count
 from networkx.algorithms.shortest_paths.weighted import _weight_function
 import math
 import configparser
+import argparse
 import csv
 from ordered_set import OrderedSet
 import multiprocessing as mp
@@ -30,7 +31,14 @@ startTime = datetime.datetime.now()
 
 
 config = configparser.ConfigParser()
-config.read('config.ini')
+argparser = argparse.ArgumentParser(description="Lightning Network Simulator")
+argparser.add_argument('-c', '--config', required=True, help='Path to config file')
+
+args = argparser.parse_args()
+
+configfile = args.config
+
+config.read(configfile)
 
 #--------------------------------------------
 global use_log, case
