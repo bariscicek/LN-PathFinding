@@ -95,7 +95,7 @@ hist_liquidity_penalty_amt_multiplier = float(config['LDK']['h_pen_amt_mul'])/10
 
 #---------------------------------------------------------------------------
 def make_graph(G):
-    df = pd.read_csv('LN_snapshot.csv')
+    df = pd.read_csv('LN_snapshot.csv', low_memory=False)
     is_multi = df["short_channel_id"].value_counts() > 1
     df = df[df["short_channel_id"].isin(is_multi[is_multi].index)]
     node_num = {}
@@ -530,7 +530,7 @@ def callable(source, target, amt, result, name):
 
     def cln_cost(v,u,d):
         compute_fee(v,u,d)
-        cap = G.edges[u,v]['capacity']
+        cap = G.edges[u,v]['Balance']
         fee = fee_dict[(u,v)]
         curr_amt = amt_dict[(u,v)] - fee
         if curr_amt > cap:
@@ -556,7 +556,7 @@ def callable(source, target, amt, result, name):
         if u in visited:
             return float('inf')
         compute_fee(v,u,d)
-        ncap = 1-normalize(G.edges[u,v]["capacity"], min_cap, max_cap)
+        ncap = 1-normalize(G.edges[u,v]["Balance"], min_cap, max_cap)
         nage = normalize(G.edges[u,v]["Age"], cbr-365*24*6, cbr)
         ncltv = normalize(G.edges[u,v]["Delay"], min_cltv, max_cltv)
 
@@ -567,8 +567,8 @@ def callable(source, target, amt, result, name):
         hopcost =  hop_base + hop_amt * hop_rate
 
         #Success Probability
-        if G.edges[u,v]["capacity"] != 0:
-            if hop_amt > G.edges[u,v]["capacity"]:
+        if G.edges[u,v]["Balance"] != 0:
+            if hop_amt > G.edges[u,v]["Balance"]:
                 return float('inf')
             if u == source:
                 if G.edges[u,v]["Balance"]<hop_amt:
@@ -875,7 +875,7 @@ def callable(source, target, amt, result, name):
 
 if __name__ == '__main__':
     def node_classifier():
-        df = pd.read_csv('LN_snapshot.csv')
+        df = pd.read_csv('LN_snapshot.csv', low_memory=False)
         is_multi = df["short_channel_id"].value_counts() > 1
         df = df[df["short_channel_id"].isin(is_multi[is_multi].index)]
         nodes_pubkey = list(OrderedSet(list(df['source']) + list(df['destination'])))
@@ -967,8 +967,8 @@ if __name__ == '__main__':
         if not(node_ok(source, target)):
             continue
 
-        print("\nSource = ",source, "Target = ", target, "Amount=", amt, 'Epoch =', i)
-        print("----------------------------------------------")
+        # print("\nSource = ",source, "Target = ", target, "Amount=", amt, 'Epoch =', i)
+        # print("----------------------------------------------")
         result['Source'] = source
         result['Target'] = target
         result['Amount'] = amt
