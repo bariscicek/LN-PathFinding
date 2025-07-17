@@ -132,6 +132,9 @@ def make_graph(G):
 G = nx.DiGraph()
 G = make_graph(G)
 
+all_nodes = list(G.nodes)
+special_nodes = set(rn.sample(all_nodes, 300))
+
 y = []
 cc = 0
 #Sample balance from bimodal or uniform distribution
@@ -456,7 +459,10 @@ def callable(source, target, amt, result, name):
         timepref *= 0.9
         defaultattemptcost = attemptcost+attemptcostppm*amt_dict[(u,v)]/1000000
         penalty = defaultattemptcost * ((1/(0.5-timepref/2)) - 1)
-        cap = G.edges[u,v]["Balance"]
+        if u in special_nodes and v in special_nodes:
+            cap = G.edges[u,v]["Balance"]
+        else:
+            cap = G.edges[u,v]["capacity"]
         if amt_dict[(u,v)] > cap:
             return float('inf'), float('inf')
         if case == 'apriori':
